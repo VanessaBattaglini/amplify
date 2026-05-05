@@ -1,7 +1,8 @@
 /**
  * Lambda proxy de producción.
- * Invoca el AgentRuntime de BedrockAgentCore usando SigV4.
- * Soporta agentArn dinámico para cambiar de agente desde el frontend.
+ * Rutas:
+ *   GET  /agents  — lista los AgentRuntimes de la cuenta
+ *   POST /chat    — invoca un AgentRuntime con SigV4
  */
 
 import { SignatureV4 } from '@smithy/signature-v4'
@@ -10,6 +11,7 @@ import { Sha256 } from '@aws-crypto/sha256-js'
 const DEFAULT_RUNTIME_ARN = process.env.RUNTIME_ARN
 const REGION = process.env.AWS_REGION || 'us-east-1'
 const HOST   = `bedrock-agentcore.${REGION}.amazonaws.com`
+const CONTROL_HOST = `bedrock-agentcore-control.${REGION}.amazonaws.com`
 
 function getCredentials() {
   return {
@@ -19,6 +21,53 @@ function getCredentials() {
   }
 }
 
+// ── Listar agentes via control plane ─────────────────────────────
+async function listAgents() {
+  const path = '/runtimes/'
+
+  const signer = new SignatureV4({
+    credentials: getCredentials(),
+    region: REGION,
+    service: 'bedrock-agentcore',
+    sha256: Sha256,
+  })
+
+  const signed = await signer.sign({
+    method: 'POST',
+    hostname: CONTROL_HOST,
+    path,
+    headers: {
+      'Content-Type': 'application/json',
+      'host': CONTROL_HOST,
+    },
+    body: '',
+  })
+
+  const res = await fetch(`https://${CONTROL_HOST}${path}`, {
+    method: 'POST',
+    headers: signed.headers,
+    body: '',
+  })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Control plane error (${res.status}): ${errText}`)
+  }
+
+  const data = await res.json()
+  const runtimes = data?.agentRuntimes ?? []
+
+  return runtimes.map(a => ({
+    id:          a.agentRuntimeId      ?? '',
+    arn:         a.agentRuntimeArn     ?? '',
+    name:        a.agentRuntimeName    ?? 'Sin nombre',
+    description: a.description         || 'Sin descripción',
+    status:      a.status              ?? 'UNKNOWN',
+    version:     a.agentRuntimeVersion ?? '1',
+  }))
+}
+
+// ── Invocar AgentRuntime ──────────────────────────────────────────
 async function invokeRuntime(message, sessionId, runtimeArn) {
   const arn  = runtimeArn || DEFAULT_RUNTIME_ARN
   const path = `/runtimes/${encodeURIComponent(arn)}/invocations`
@@ -65,31 +114,47 @@ async function invokeRuntime(message, sessionId, runtimeArn) {
   return JSON.stringify(data?.result || data)
 }
 
+// ── Handler principal ─────────────────────────────────────────────
 export const handler = async (event) => {
-  const headers = {
+  const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-    'Access-Control-Allow-Methods': 'POST,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Content-Type': 'application/json',
   }
 
-  if (event.requestContext?.http?.method === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' }
+  const method = event.requestContext?.http?.method
+  const routePath = event.requestContext?.http?.path ?? event.rawPath ?? ''
+
+  // Preflight CORS
+  if (method === 'OPTIONS') {
+    return { statusCode: 200, headers: corsHeaders, body: '' }
   }
 
   try {
-    const body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {})
-    const { message, sessionId, agentArn } = body
-
-    if (!message) {
-      return { statusCode: 400, headers, body: JSON.stringify({ error: 'El campo message es requerido' }) }
+    // GET /agents — listar agentes
+    if (method === 'GET' && routePath.includes('/agents')) {
+      const agents = await listAgents()
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ agents }) }
     }
 
-    const responseText = await invokeRuntime(message, sessionId, agentArn)
-    return { statusCode: 200, headers, body: JSON.stringify({ response: responseText, sessionId }) }
+    // POST /chat — invocar agente
+    if (method === 'POST') {
+      const body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {})
+      const { message, sessionId, agentArn } = body
+
+      if (!message) {
+        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'El campo message es requerido' }) }
+      }
+
+      const responseText = await invokeRuntime(message, sessionId, agentArn)
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ response: responseText, sessionId }) }
+    }
+
+    return { statusCode: 404, headers: corsHeaders, body: JSON.stringify({ error: 'Ruta no encontrada' }) }
 
   } catch (err) {
     console.error('Lambda handler error:', err)
-    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message || 'Error interno' }) }
+    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: err.message || 'Error interno' }) }
   }
 }

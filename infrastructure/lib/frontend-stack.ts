@@ -51,9 +51,20 @@ export class FrontendStack extends cdk.Stack {
         resources: [
           RUNTIME_ARN,
           `${RUNTIME_ARN}/runtime-endpoint/*`,
-          // Permitir invocar cualquier runtime de la cuenta
           `arn:aws:bedrock-agentcore:${this.region}:${this.account}:runtime/*`,
         ],
+      })
+    )
+
+    agentProxyLambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        sid: 'ListAgentRuntimes',
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'bedrock-agentcore:ListAgentRuntimes',
+          'bedrock-agentcore:GetAgentRuntime',
+        ],
+        resources: ['*'],
       })
     )
 
@@ -72,6 +83,12 @@ export class FrontendStack extends cdk.Stack {
       path: '/chat',
       methods: [apigateway.HttpMethod.POST],
       integration: new integrations.HttpLambdaIntegration('AgentProxyIntegration', agentProxyLambda),
+    })
+
+    httpApi.addRoutes({
+      path: '/agents',
+      methods: [apigateway.HttpMethod.GET],
+      integration: new integrations.HttpLambdaIntegration('AgentsIntegration', agentProxyLambda),
     })
 
     // ── Outputs ───────────────────────────────────────────────────

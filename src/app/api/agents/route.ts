@@ -1,23 +1,27 @@
 import { NextResponse } from 'next/server'
-import { BedrockAgentCoreControlClient, ListAgentRuntimesCommand, ListAgentRuntimesCommandOutput } from '@aws-sdk/client-bedrock-agentcore-control'
+
+// Llama a la Lambda proxy que tiene credenciales IAM para el control plane
+const AGENT_LAMBDA_URL = process.env.AGENT_LAMBDA_URL || ''
 
 export async function GET() {
+  if (!AGENT_LAMBDA_URL) {
+    return NextResponse.json({ error: 'AGENT_LAMBDA_URL no configurada' }, { status: 500 })
+  }
+
+  // La URL de la Lambda es https://xxx.execute-api.../chat
+  // Reemplazamos /chat por /agents
+  const agentsUrl = AGENT_LAMBDA_URL.replace(/\/chat$/, '/agents')
+
   try {
-    const client = new BedrockAgentCoreControlClient({ region: 'us-east-1' })
-    const output: ListAgentRuntimesCommandOutput = await client.send(new ListAgentRuntimesCommand({}))
+    const res = await fetch(agentsUrl, { method: 'GET' })
+    const data = await res.json()
 
-    const agents = (output.agentRuntimes ?? []).map((a) => ({
-      id:          a.agentRuntimeId   ?? '',
-      arn:         a.agentRuntimeArn  ?? '',
-      name:        a.agentRuntimeName ?? 'Sin nombre',
-      description: a.description      || 'Sin descripción',
-      status:      a.status           ?? 'UNKNOWN',
-      version:     a.agentRuntimeVersion ?? '1',
-    }))
+    if (!res.ok) {
+      return NextResponse.json({ error: data.error || 'Error del servidor' }, { status: res.status })
+    }
 
-    return NextResponse.json({ agents })
+    return NextResponse.json(data)
   } catch (err: unknown) {
-    console.error('Error listando agentes:', err)
     const message = err instanceof Error ? err.message : 'Error desconocido'
     return NextResponse.json({ error: message }, { status: 500 })
   }
