@@ -1,0 +1,36 @@
+{
+  "name": "agent-core-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:lambda": "node lambda/local-server.mjs",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@aws-amplify/ui-react": "^6.9.0",
+    "@aws-crypto/sha256-js": "^5.2.0",
+    "@aws-sdk/credential-providers": "^3.1042.0",
+    "@smithy/signature-v4": "^5.3.14",
+    "@types/uuid": "^10.0.0",
+    "aws-amplify": "^6.13.3",
+    "lucide-react": "^0.511.0",
+    "next": "14.2.29",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.50",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.29",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3"
+  }
+}

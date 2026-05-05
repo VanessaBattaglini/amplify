@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+infrastructure/node_modules/
+
+# Next.js build
+.next/
+out/
+
+# Environment variables (nunca subir)
+.env.local
+.env*.local
+
+# CDK
+infrastructure/cdk.out/
+
+# Misc
+.DS_Store
+*.pem
+npm-debug.log*
