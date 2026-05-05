@@ -7,6 +7,7 @@ import { configureAmplify } from '@/lib/amplify-config'
 import ChatMessage, { Message } from '@/components/ChatMessage'
 import ChatInput from '@/components/ChatInput'
 import Sidebar from '@/components/Sidebar'
+import { Agent } from '@/components/AgentSelector'
 import { v4 as uuidv4 } from 'uuid'
 
 const WELCOME_MESSAGE: Message = {
@@ -23,6 +24,7 @@ export default function ChatPage() {
   const [userName, setUserName] = useState('')
   const [userEmail, setUserEmail] = useState('')
   const [sessionId] = useState(() => uuidv4())
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Verificar autenticación
@@ -87,6 +89,7 @@ export default function ChatPage() {
         body: JSON.stringify({
           message: content,
           sessionId,
+          ...(selectedAgent ? { agentArn: selectedAgent.arn } : {}),
         }),
       })
 
@@ -141,6 +144,8 @@ export default function ChatPage() {
       <Sidebar
         userName={userName}
         userEmail={userEmail}
+        selectedAgentArn={selectedAgent?.arn ?? ''}
+        onAgentSelect={setSelectedAgent}
         onNewChat={handleNewChat}
         onLogout={handleLogout}
       />
@@ -152,8 +157,12 @@ export default function ChatPage() {
           <div className="flex items-center gap-3">
             <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse" />
             <div>
-              <h2 className="text-slate-800 font-semibold text-sm">Agente Conversacional</h2>
-              <p className="text-slate-400 text-xs">Bedrock AgentCore · MCP Protocol</p>
+              <h2 className="text-slate-800 font-semibold text-sm">
+                {selectedAgent ? selectedAgent.name : 'Agente Conversacional'}
+              </h2>
+              <p className="text-slate-400 text-xs">
+                {selectedAgent ? selectedAgent.description : 'Bedrock AgentCore'}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-400">

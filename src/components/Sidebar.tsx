@@ -1,15 +1,18 @@
 'use client'
 
 import { LogOut, MessageSquare, Plus } from 'lucide-react'
+import AgentSelector, { Agent } from './AgentSelector'
 
 interface SidebarProps {
   userName: string
   userEmail: string
+  selectedAgentArn: string
+  onAgentSelect: (agent: Agent) => void
   onNewChat: () => void
   onLogout: () => void
 }
 
-export default function Sidebar({ userName, userEmail, onNewChat, onLogout }: SidebarProps) {
+export default function Sidebar({ userName, userEmail, selectedAgentArn, onAgentSelect, onNewChat, onLogout }: SidebarProps) {
   const initial = userName?.charAt(0)?.toUpperCase() || userEmail?.charAt(0)?.toUpperCase() || 'U'
 
   return (
@@ -30,6 +33,14 @@ export default function Sidebar({ userName, userEmail, onNewChat, onLogout }: Si
         </div>
       </div>
 
+      {/* Selector de agente */}
+      <div className="px-4 py-4 border-b border-blue-700">
+        <AgentSelector
+          selectedArn={selectedAgentArn}
+          onSelect={onAgentSelect}
+        />
+      </div>
+
       {/* Nuevo chat */}
       <div className="px-4 py-4">
         <button
@@ -41,7 +52,7 @@ export default function Sidebar({ userName, userEmail, onNewChat, onLogout }: Si
         </button>
       </div>
 
-      {/* Historial (placeholder) */}
+      {/* Historial */}
       <div className="flex-1 px-4 overflow-y-auto">
         <p className="text-blue-400 text-xs font-medium uppercase tracking-wider mb-2 px-1">Recientes</p>
         <div className="space-y-1">

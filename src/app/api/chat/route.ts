@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const AGENT_LAMBDA_URL = process.env.AGENT_LAMBDA_URL || ''
+const DEFAULT_AGENT_LAMBDA_URL = process.env.AGENT_LAMBDA_URL || ''
 
 export async function POST(req: NextRequest) {
   console.log('─── /api/chat POST ───────────────────────────')
-  console.log('AGENT_LAMBDA_URL:', AGENT_LAMBDA_URL || '(vacío → modo mock)')
 
   try {
     const body = await req.json()
-    const { message, sessionId } = body
+    const { message, sessionId, agentArn } = body
+
+    const AGENT_LAMBDA_URL = DEFAULT_AGENT_LAMBDA_URL
+    console.log('AGENT_LAMBDA_URL:', AGENT_LAMBDA_URL || '(vacío → modo mock)')
     console.log('message:', message)
-    console.log('sessionId:', sessionId)
+    console.log('agentArn:', agentArn || '(usando ARN por defecto)')
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: 'El campo message es requerido' }, { status: 400 })
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/json',
         ...(authHeader ? { Authorization: authHeader } : {}),
       },
-      body: JSON.stringify({ message, sessionId }),
+      body: JSON.stringify({ message, sessionId, ...(agentArn ? { agentArn } : {}) }),
     })
 
     console.log('Lambda status:', lambdaResponse.status)

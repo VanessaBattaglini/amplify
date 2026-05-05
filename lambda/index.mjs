@@ -1,27 +1,16 @@
 /**
  * Lambda proxy de producción.
- * Recibe mensajes del frontend Next.js y los envía al AgentRuntime
- * de BedrockAgentCore usando SigV4 (credenciales IAM del rol de la Lambda).
- *
- * Variables de entorno requeridas:
- *   RUNTIME_ARN  — ARN del AgentRuntime
+ * Invoca el AgentRuntime de BedrockAgentCore usando SigV4.
+ * Soporta agentArn dinámico para cambiar de agente desde el frontend.
  */
 
 import { SignatureV4 } from '@smithy/signature-v4'
 import { Sha256 } from '@aws-crypto/sha256-js'
 
-const RUNTIME_ARN = process.env.RUNTIME_ARN
-const REGION      = process.env.AWS_REGION || 'us-east-1'
-const HOST        = `bedrock-agentcore.${REGION}.amazonaws.com`
+const DEFAULT_RUNTIME_ARN = process.env.RUNTIME_ARN
+const REGION = process.env.AWS_REGION || 'us-east-1'
+const HOST   = `bedrock-agentcore.${REGION}.amazonaws.com`
 
-// El ARN tiene formato: arn:aws:bedrock-agentcore:{region}:{account}:runtime/{runtime-id}
-// El path del endpoint usa el runtime-id (última parte del ARN)
-function getRuntimePath(arn) {
-  const runtimeId = arn.split('/').pop()
-  return `/runtimes/${encodeURIComponent(runtimeId)}/invocations`
-}
-
-/** Obtiene credenciales del rol de la Lambda via variables de entorno de AWS */
 function getCredentials() {
   return {
     accessKeyId:     process.env.AWS_ACCESS_KEY_ID,
@@ -30,13 +19,13 @@ function getCredentials() {
   }
 }
 
-async function invokeRuntime(message, sessionId) {
-  const credentials = getCredentials()
-  const path = getRuntimePath(RUNTIME_ARN)
+async function invokeRuntime(message, sessionId, runtimeArn) {
+  const arn  = runtimeArn || DEFAULT_RUNTIME_ARN
+  const path = `/runtimes/${encodeURIComponent(arn)}/invocations`
   const body = JSON.stringify({ prompt: message })
 
   const signer = new SignatureV4({
-    credentials,
+    credentials: getCredentials(),
     region: REGION,
     service: 'bedrock-agentcore',
     sha256: Sha256,
@@ -67,7 +56,6 @@ async function invokeRuntime(message, sessionId) {
 
   const data = await res.json()
 
-  // Extraer texto de la respuesta
   const content = data?.result?.content
   if (Array.isArray(content)) {
     const text = content.filter(c => c.text).map(c => c.text).join('\n')
@@ -85,36 +73,23 @@ export const handler = async (event) => {
     'Content-Type': 'application/json',
   }
 
-  // Preflight CORS
   if (event.requestContext?.http?.method === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' }
   }
 
   try {
     const body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {})
-    const { message, sessionId } = body
+    const { message, sessionId, agentArn } = body
 
     if (!message) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'El campo message es requerido' }),
-      }
+      return { statusCode: 400, headers, body: JSON.stringify({ error: 'El campo message es requerido' }) }
     }
 
-    const responseText = await invokeRuntime(message, sessionId)
+    const responseText = await invokeRuntime(message, sessionId, agentArn)
+    return { statusCode: 200, headers, body: JSON.stringify({ response: responseText, sessionId }) }
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ response: responseText, sessionId }),
-    }
   } catch (err) {
     console.error('Lambda handler error:', err)
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: err.message || 'Error interno del servidor' }),
-    }
+    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message || 'Error interno' }) }
   }
 }
