@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const DEFAULT_AGENT_LAMBDA_URL = process.env.AGENT_LAMBDA_URL || ''
+const LAMBDA_API_KEY           = process.env.LAMBDA_API_KEY   || ''
 
 export async function POST(req: NextRequest) {
   console.log('─── /api/chat POST ───────────────────────────')
@@ -19,7 +20,6 @@ export async function POST(req: NextRequest) {
     }
 
     const authHeader = req.headers.get('authorization')
-    console.log('Authorization header:', authHeader ? `Bearer ...${authHeader.slice(-10)}` : '(ausente)')
 
     if (!AGENT_LAMBDA_URL) {
       console.log('→ Modo mock (sin AGENT_LAMBDA_URL)')
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-api-key': LAMBDA_API_KEY,
         ...(authHeader ? { Authorization: authHeader } : {}),
       },
       body: JSON.stringify({ message, sessionId, ...(agentArn ? { agentArn } : {}) }),

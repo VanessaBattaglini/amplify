@@ -1,19 +1,20 @@
 import { NextResponse } from 'next/server'
 
-// Llama a la Lambda proxy que tiene credenciales IAM para el control plane
 const AGENT_LAMBDA_URL = process.env.AGENT_LAMBDA_URL || ''
+const LAMBDA_API_KEY   = process.env.LAMBDA_API_KEY   || ''
 
 export async function GET() {
   if (!AGENT_LAMBDA_URL) {
     return NextResponse.json({ error: 'AGENT_LAMBDA_URL no configurada' }, { status: 500 })
   }
 
-  // La URL de la Lambda es https://xxx.execute-api.../chat
-  // Reemplazamos /chat por /agents
   const agentsUrl = AGENT_LAMBDA_URL.replace(/\/chat$/, '/agents')
 
   try {
-    const res = await fetch(agentsUrl, { method: 'GET' })
+    const res = await fetch(agentsUrl, {
+      method: 'GET',
+      headers: { 'x-api-key': LAMBDA_API_KEY },
+    })
     const data = await res.json()
 
     if (!res.ok) {

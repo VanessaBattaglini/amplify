@@ -68,10 +68,10 @@ async function listAgents() {
 }
 
 // ── Invocar AgentRuntime ──────────────────────────────────────────
-async function invokeRuntime(message, sessionId, runtimeArn) {
+async function invokeRuntime(payload, sessionId, runtimeArn) {
   const arn  = runtimeArn || DEFAULT_RUNTIME_ARN
   const path = `/runtimes/${encodeURIComponent(arn)}/invocations`
-  const body = JSON.stringify({ prompt: message })
+  const body = JSON.stringify(payload)
 
   const signer = new SignatureV4({
     credentials: getCredentials(),
@@ -108,17 +108,60 @@ async function invokeRuntime(message, sessionId, runtimeArn) {
   const content = data?.result?.content
   if (Array.isArray(content)) {
     const text = content.filter(c => c.text).map(c => c.text).join('\n')
-    if (text) return text
+    if (text) return cleanText(text)
   }
-  if (typeof data?.result === 'string') return data.result
-  return JSON.stringify(data?.result || data)
+  if (typeof data?.result === 'string') return cleanText(data.result)
+  return cleanText(JSON.stringify(data?.result || data))
+}
+
+/**
+ * Construye el payload que se envía al agente.
+ *
+ * Soporta dos formatos de entrada:
+ *
+ * 1. Prompt directo (chat normal):
+ *    { message: "texto libre", sessionId, agentArn }
+ *
+ * 2. Trigger estructurado (agentes con actions):
+ *    { action: "analyze_deployment", issue_key: "CD-123", sessionId, agentArn }
+ *    { action: "analyze_deployment", issue: "CD-123", ... }  ← "issue" se mapea a "issue_key"
+ */
+function buildPayload(body) {
+  const { message, action, issue_key, issue } = body
+
+  // Formato 1 — prompt directo
+  if (message) {
+    return { prompt: message }
+  }
+
+  // Formato 2 — trigger estructurado
+  if (action) {
+    return {
+      action,
+      issue_key: issue_key || issue || '',
+    }
+  }
+
+  return null
+}
+
+// Limpia strings con escapes dobles que devuelven algunos agentes HTTP
+function cleanText(text) {
+  try {
+    // Si el texto es un JSON string escapado, lo desenvuelve
+    const parsed = JSON.parse(text)
+    if (typeof parsed === 'string') return parsed.trim()
+  } catch {
+    // No era JSON, devolver tal cual
+  }
+  return text.trim()
 }
 
 // ── Handler principal ─────────────────────────────────────────────
 export const handler = async (event) => {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,x-api-key',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Content-Type': 'application/json',
   }
@@ -131,6 +174,18 @@ export const handler = async (event) => {
     return { statusCode: 200, headers: corsHeaders, body: '' }
   }
 
+  // ── Validar API Key ───────────────────────────────────────────
+  const API_KEY = process.env.API_KEY
+  const incomingKey = event.headers?.['x-api-key'] || event.headers?.['X-Api-Key']
+
+  if (!API_KEY || incomingKey !== API_KEY) {
+    return {
+      statusCode: 401,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'API key inválida o ausente' }),
+    }
+  }
+
   try {
     // GET /agents — listar agentes
     if (method === 'GET' && routePath.includes('/agents')) {
@@ -138,16 +193,57 @@ export const handler = async (event) => {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ agents }) }
     }
 
-    // POST /chat — invocar agente
-    if (method === 'POST') {
+    // POST /analyze — endpoint M2M para triggers estructurados o prompt libre
+    // Formato 1: { message: "texto libre", agentArn?, sessionId? }
+    // Formato 2: { action, issue_key, agentArn?, sessionId? }
+    // Acciones: analyze_deployment | analyze_epic | default (resumen)
+    if (method === 'POST' && routePath.includes('/analyze')) {
       const body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {})
-      const { message, sessionId, agentArn } = body
+      const { action, issue_key, issue, sessionId, agentArn } = body
 
-      if (!message) {
-        return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'El campo message es requerido' }) }
+      const payload = buildPayload(body)
+
+      if (!payload) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            error: 'Se requiere "message" (prompt libre) o "action" + "issue_key" (trigger estructurado)',
+          }),
+        }
       }
 
-      const responseText = await invokeRuntime(message, sessionId, agentArn)
+      const responseText = await invokeRuntime(payload, sessionId, agentArn)
+      return {
+        statusCode: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          response: responseText,
+          sessionId,
+          ...(action    ? { action }                              : {}),
+          ...(issue_key || issue ? { issue_key: issue_key || issue } : {}),
+        }),
+      }
+    }
+
+    // POST /chat — invocar agente (chat normal del frontend)
+    if (method === 'POST' && routePath.includes('/chat')) {
+      const body = typeof event.body === 'string' ? JSON.parse(event.body) : (event.body || {})
+      const { sessionId, agentArn } = body
+
+      const payload = buildPayload(body)
+
+      if (!payload) {
+        return {
+          statusCode: 400,
+          headers: corsHeaders,
+          body: JSON.stringify({
+            error: 'Se requiere "message" (prompt directo) o "action" + "issue_key" (trigger estructurado)',
+          }),
+        }
+      }
+
+      const responseText = await invokeRuntime(payload, sessionId, agentArn)
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ response: responseText, sessionId }) }
     }
 

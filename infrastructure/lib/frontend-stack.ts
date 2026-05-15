@@ -28,6 +28,7 @@ export class FrontendStack extends cdk.Stack {
       memorySize: 512,
       environment: {
         RUNTIME_ARN: RUNTIME_ARN,
+        API_KEY: process.env.LAMBDA_API_KEY || '7e6fca04e65c4d66989a7a05e07d955f214713cb0d5641aebf3e4a8019bdd07b',
       },
       bundling: {
         minify: false,
@@ -89,6 +90,12 @@ export class FrontendStack extends cdk.Stack {
       path: '/agents',
       methods: [apigateway.HttpMethod.GET],
       integration: new integrations.HttpLambdaIntegration('AgentsIntegration', agentProxyLambda),
+    })
+
+    httpApi.addRoutes({
+      path: '/analyze',
+      methods: [apigateway.HttpMethod.POST],
+      integration: new integrations.HttpLambdaIntegration('AnalyzeIntegration', agentProxyLambda),
     })
 
     // ── Outputs ───────────────────────────────────────────────────
